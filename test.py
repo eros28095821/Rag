@@ -1,107 +1,108 @@
 import subprocess
-import re
+import pandas as pd
 
-# 自定义函数，用于从输入中提取信息并生成律师函
-def extract_case_data(lawyer_text):
-    # 使用正则表达式提取关键信息
-    原告 = re.search(r'原告：(.+?)，', lawyer_text).group(1) if re.search(r'原告：(.+?)，', lawyer_text) else "未知原告"
-    被告 = re.search(r'被告：(.+?)，', lawyer_text).group(1) if re.search(r'被告：(.+?)，', lawyer_text) else "未知被告"
-    事故緣由 = re.search(r'事故發生緣由\s*(.+?)\s*二、', lawyer_text, re.DOTALL).group(1).strip() if re.search(r'事故發生緣由\s*(.+?)\s*二、', lawyer_text, re.DOTALL) else "未知事故緣由"
-    事故時間 = re.search(r'事故發生時間：(.+?)\s*事故地點：', lawyer_text).group(1) if re.search(r'事故發生時間：(.+?)\s*事故地點：', lawyer_text) else "未知時間"
-    事故地點 = re.search(r'事故地點：(.+?)\s*醫藥費用：', lawyer_text).group(1) if re.search(r'事故地點：(.+?)\s*醫藥費用：', lawyer_text) else "未知地點"
+# 读取 Excel 文件并加载案件参考数据
+def load_reference_cases(file_path, max_cases=5, max_chars_per_case=200):
+    try:
+        df = pd.read_excel(file_path, sheet_name='判決書550筆ver1')  # 使用文件路径读取文件
+        reference_cases = []
+        for index, row in df.iterrows():
+            # 创建案件摘要并限制字符数
+            case_summary = f"案件{index + 1}：原告{row.get('Unnamed: 5', '未知原告')}，被告{row.get('Unnamed: 6', '未知被告')}，事故緣由：{row.get('Unnamed: 7', '未知事故緣由')}。"
+            reference_cases.append(case_summary[:max_chars_per_case])  # 截取到最大字符数
+            if len(reference_cases) >= max_cases:
+                break  # 限制总数
+        return reference_cases
+    except Exception as e:
+        print("读取 Excel 文件时出错：", e)
+        return []
 
-    # 这里可以优化正则表达式以确保能提取到金额
-    醫藥費用 = re.search(r'醫藥費用：([\d,]+)元', lawyer_text).group(1).replace(',', '') if re.search(r'醫藥費用：([\d,]+)元', lawyer_text) else "0"
-    看護費用 = re.search(r'看護費用：([\d,]+)元', lawyer_text).group(1).replace(',', '') if re.search(r'看護費用：([\d,]+)元', lawyer_text) else "0"
-    喪失工作所得 = re.search(r'喪失工作所得：([\d,]+)元', lawyer_text).group(1).replace(',', '') if re.search(r'喪失工作所得：([\d,]+)元', lawyer_text) else "0"
-    精神慰撫金 = re.search(r'精神慰撫金：([\d,]+)元', lawyer_text).group(1).replace(',', '') if re.search(r'精神慰撫金：([\d,]+)元', lawyer_text) else "0"
-    總金額 = re.search(r'總金額：([\d,]+)元', lawyer_text).group(1).replace(',', '') if re.search(r'總金額：([\d,]+)元', lawyer_text) else "0"
-     # 打印提取的信息以供调试
-    print("提取的信息:")
-    print(f"原告: {原告}, 被告: {被告}, 醫藥費用: {醫藥費用}, 看護費用: {看護費用}, 喪失工作所得: {喪失工作所得}, 精神慰撫金: {精神慰撫金}, 總金額: {總金額},事故時間: {事故時間},  事故地點: {事故地點}")
-    return {
-        '原告': 原告,
-        '被告': 被告,
-        '事故緣由': 事故緣由,
-        '醫藥費用': 醫藥費用,
-        '看護費用': 看護費用,
-        '喪失工作所得': 喪失工作所得,
-        '精神慰撫金': 精神慰撫金,
-        '總金額': 總金額,
-        '事故時間': 事故時間,
-        '事故地點': 事故地點,
-    }
-# 自定义函数，用于生成律师函
-def generate_lawyer_letter(case_data):
-    # 创建生成的律師函的提示文本
+# 手动输入新案件的数据，包括靈活的賠償項目
+def manual_input_case_data():
+    case_data = {}
+    case_data['原告'] = input("請輸入原告姓名：")
+    case_data['被告'] = input("請輸入被告姓名：")
+    case_data['事故緣由'] = input("請輸入事故發生緣由：")
+    
+    # 賠償項目
+    case_data['賠償項目'] = {}
+    case_data['賠償項目']['醫藥費用'] = int(input("請輸入醫藥費用（元）：").replace(',', '') or "0")
+    case_data['賠償項目']['看護費用'] = int(input("請輸入看護費用（元）：").replace(',', '') or "0")
+    case_data['賠償項目']['喪失工作所得'] = int(input("請輸入喪失工作所得（元）：").replace(',', '') or "0")
+    case_data['賠償項目']['精神慰撫金'] = int(input("請輸入精神慰撫金（元）：").replace(',', '') or "0")
+    
+    # 動態添加其他賠償項目
+    while True:
+        add_more = input("是否要添加其他賠償項目？(y/n)：")
+        if add_more.lower() == 'y':
+            item_name = input("請輸入賠償項目名稱：")
+            item_amount = int(input(f"請輸入{item_name}金額（元）：").replace(',', '') or "0")
+            case_data['賠償項目'][item_name] = item_amount
+        else:
+            break
+    
+    # 計算總金額
+    case_data['總金額'] = sum(case_data['賠償項目'].values())
+    
+    return case_data
+
+# 生成律师函
+def generate_lawyer_letter(reference_cases, case_data):
+    # 将参考案件集合为单个字符串
+    reference_text = "\n".join(reference_cases)
+    
+    # 構建賠償項目細節文本
+    compensation_details = "\n".join([f"    - {item}：{amount}元" for item, amount in case_data['賠償項目'].items()])
+    
+    exp_case = """
+    範例案件1：在交通事故中，原告因被告駕駛車輛不當操作而受傷，引用第184條和第193條作為侵權賠償條款。
+    範例案件2：多人共同造成原告受傷，但無法確定具體加害人時，引用第185條作為連帶賠償依據。
+    範例案件3：被告駕駛機車行駛途中疏忽駕駛，撞傷行人，依第191-2條駕駛人應負賠償責任。
+    範例案件4：被告在營業性運輸活動中操作失當，導致原告受傷，依第191-3條被告應負特別損害賠償責任。
+    範例案件5：原告因被告在交通事故中造成重傷，依第193條請求其醫療費、看護費等損害賠償。
+    範例案件6：原告因被告的過失行為遭受嚴重精神創傷，依第195條請求精神慰撫金。
+    範例案件7：原告的車輛在交通事故中損壞，依第217條請求財產損害賠償。
+    範例案件8：被告酒駕並肇事，原告引用《道路交通管理處罰條例》第62條以加強賠償依據。
+    範例案件9：被告因超速駕駛導致車禍，原告引用《道路交通管理處罰條例》第43條，以證明被告違規行為。
+    範例案件10：被告駕駛車輛未遵守安全駕駛規範，違反《道路交通管理處罰條例》第82條，原告引用此條款作為賠償依據。
+    """
+    # 构建生成律师函的 Prompt
     prompt = f"""
-    你是一個中華民國的民法專長的律師，你要根據中華民國民法正確引用民法法條，並且要正確引用以下的中華民國民法內容。
-######
-第 184 條
-因故意或過失，不法侵害他人之權利者，負損害賠償責任。故意以背於善良風俗之方法，加損害於他人者亦同。
-違反保護他人之法律，致生損害於他人者，負賠償責任。但能證明其行為無過失者，不在此限。
-第 185 條
-數人共同不法侵害他人之權利者，連帶負損害賠償責任。不能知其中孰為加害人者亦同。
-造意人及幫助人，視為共同行為人。
-第 191 條
-土地上之建築物或其他工作物所致他人權利之損害，由工作物之所有人負賠償責任。但其對於設置或保管並無欠缺，或損害非因設置或保管有欠缺，或於防止損害之發生，已盡相當之注意者，不在此限。
-前項損害之發生，如別有應負責任之人時，賠償損害之所有人，對於該應負責者，有求償權。
-第 191-1 條
-商品製造人因其商品之通常使用或消費所致他人之損害，負賠償責任。但其對於商品之生產、製造或加工、設計並無欠缺或其損害非因該項欠缺所致或於防止損害之發生，已盡相當之注意者，不在此限。
-前項所稱商品製造人，謂商品之生產、製造、加工業者。其在商品上附加標章或其他文字、符號，足以表彰係其自己所生產、製造、加工者，視為商品製造人。
-商品之生產、製造或加工、設計，與其說明書或廣告內容不符者，視為有欠缺。
-商品輸入業者，應與商品製造人負同一之責任。
-第 191-2 條
-汽車、機車或其他非依軌道行駛之動力車輛，在使用中加損害於他人者，駕駛人應賠償因此所生之損害。但於防止損害之發生，已盡相當之注意者，不在此限。
-第 191-3 條
-經營一定事業或從事其他工作或活動之人，其工作或活動之性質或其使用之工具或方法有生損害於他人之危險者，對他人之損害應負賠償責任。但損害非由於其工作或活動或其使用之工具或方法所致，或於防止損害之發生已盡相當之注意者，不在此限。
-第 193 條
-不法侵害他人之身體或健康者，對於被害人因此喪失或減少勞動能力或增加生活上之需要時，應負損害賠償責任。
-前項損害賠償，法院得因當事人之聲請，定為支付定期金。但須命加害人提出擔保。
-第 195 條
-不法侵害他人之身體、健康、名譽、自由、信用、隱私、貞操，或不法侵害其他人格法益而情節重大者，被害人雖非財產上之損害，亦得請求賠償相當之金額。其名譽被侵害者，並得請求回復名譽之適當處分。
-前項請求權，不得讓與或繼承。但以金額賠償之請求權已依契約承諾，或已起訴者，不在此限。
-前二項規定，於不法侵害他人基於父、母、子、女或配偶關係之身分法益而情節重大者，準用之。
-######
+    以下是一些已審結的案件摘要，可作為參考依據：
+    {reference_text}{exp_case}
 
-你主要是要撰寫交通事故的民事起訴狀，並且只針對慰撫金部分的案件作撰寫。慰撫金基本上只會用到以上民法的內容，你閱讀完需要改寫的內容之後思考一下再使用正確的民法法條。
-以下是一個正確的民事交通事故起訴狀的範本，請你根據使用者提供的內容，然後生成符合範本的內容，以下是我要你生成的訴訟狀的法律結構：
-請根據以下信息生成一份完整的民事交通事故起訴狀，包括必要的法律條款和賠償項目：
+    根據以下新案件資料，生成一份完整的民事交通事故起訴狀草稿，包括詳細的事實描述、法律條款引用和賠償請求，格式要求如下：
 
+    新案件資料：
+    - 原告：{case_data['原告']}
+    - 被告：{case_data['被告']}
+    - 事故經過：{case_data['事故緣由']}
+    - 賠償費用明細：
+{compensation_details}
+    - 賠償費用總金額：{case_data['總金額']}元
+    
+    起訴狀格式應包括：
+    
+    一、事實緣由：
+    描述事故發生的經過。格式需完整且符合法律文件的正式語氣，清晰指出原告如何遭受傷害，以及該傷害的嚴重程度。例如，詳細描述被告如何基於故意或過失，對原告造成了什麼具體的身體或精神傷害。
 
-請根據以下案件信息生成一份民事交通事故起訴狀：
-- 原告：{case_data['原告']}
-- 被告：{case_data['被告']}
-- 事故經過：{case_data['事故緣由']}
-- 醫療費用：{case_data['醫藥費用']}
-- 看護費用：{case_data['看護費用']}
-- 精神慰撫金：{case_data['精神慰撫金']}
-- 喪失工作所得：{case_data['喪失工作所得']}
-- 總金額：{case_data['總金額']}
-- 事故時間：{case_data['事故時間']}
-- 事故地點：{case_data['事故地點']}
-請確保生成的起訴狀包含：
-1. 事實緣由
-2. 引用相關法條
-3. 賠償請求及詳細說明
+    二、被害結果：
+    詳細描述原告受傷或財產損失情況，包含醫療需求、治療過程及後遺症。
 
-生成的起訴狀應使用法律術語，並按上述要求進行結構化。
-請確保結構完整，使用法律術語，並引用相關的民法條款。起訴狀的結構如下：
+    三、損害賠償的事實及金額：分別列出醫療費用、看護費用、工作損失、精神慰撫金等，並計算總金額。
+    
+    四、引用法律條款：
+    明確列出相關的法律條款，包括《中華民國民法》第184條、第185條、第193條和第195條，並根據案件的情況說明該條款如何適用於賠償請求。請以分段形式呈現各條款，例如：「因故意或過失，不法侵害他人之權利者，負損害賠償責任。」。並引用每條法律條款的適用情況。
 
-一、事實緣由：
-[在此填寫詳細的事實緣由，使用法律用語]
-
-二、引用法條：
-[在此引用相關的法律條款，例如第184條和第193條，並簡要說明適用情況]
-
-三、賠償請求：
-|---(一) 相關的賠償大項，以及說明，說明要很詳細。撰寫金額的時候統一使用'位數逗號的數字'；
-|         |---1. 醫療費用：[金額]，說明要很詳細；
-|---(六) 綜上所陳，請求總計賠償金額為：{case_data['總金額']}
-
+    五、賠償請求：
+    列出以上賠償項目及其金額，使用詳細說明以表達合理性，且請求被告支付賠償金額及利息。
+    - 合計賠償金額：{case_data['總金額']}元
+    
+    以上結構應嚴謹且正式，遵循法律術語的使用規範。
     """
 
-    # 使用 Ollama CLI 调用模型
+    
+    # 使用 Ollama CLI 调用本地模型
     result = subprocess.run(
         ["ollama", "run", "kenneth85/llama-3-taiwan:8b-instruct", prompt],
         capture_output=True,
@@ -116,36 +117,18 @@ def generate_lawyer_letter(case_data):
     
     return lawyer_letter
 
-# 使用者輸入模擬律師內容
-lawyer_text = input("請輸入模擬律師內容：")
-
-# 提取案件資料
-case_data = extract_case_data(lawyer_text)
-# 手动输入更正信息
-print("\n請手動更正提取的信息（直接按Enter保持不變）：")
-原告 = input(f"原告（目前為 {case_data['原告']}）：") or case_data['原告']
-被告 = input(f"被告（目前為 {case_data['被告']}）：") or case_data['被告']
-醫藥費用 = input(f"醫藥費用（目前為 {case_data['醫藥費用']}）：") or case_data['醫藥費用']
-看護費用 = input(f"看護費用（目前為 {case_data['看護費用']}）：") or case_data['看護費用']
-喪失工作所得 = input(f"喪失工作所得（目前為 {case_data['喪失工作所得']}）：") or case_data['喪失工作所得']
-精神慰撫金 = input(f"精神慰撫金（目前為 {case_data['精神慰撫金']}）：") or case_data['精神慰撫金']
-總金額 = input(f"總金額（目前為 {case_data['總金額']}）：") or case_data['總金額']
-事故時間 = input(f"事故時間（目前為 {case_data['事故時間']}）：") or case_data['事故時間']
-事故地點 = input(f"事故地點（目前為 {case_data['事故地點']}）：") or case_data['事故地點']
-# 更新案件资料
-case_data['原告'] = 原告
-case_data['被告'] = 被告
-case_data['醫藥費用'] = 醫藥費用
-case_data['看護費用'] = 看護費用
-case_data['喪失工作所得'] = 喪失工作所得
-case_data['精神慰撫金'] = 精神慰撫金
-case_data['總金額'] = 總金額
-case_data['事故時間'] = 事故時間
-case_data['事故地點'] = 事故地點
-# 打印最终的案件资料
-print("\n最终的案件资料:")
-print(case_data)
-# 生成律師函並打印
-lawyer_letter = generate_lawyer_letter(case_data)
-if lawyer_letter:
-    print("\n生成的律師函：\n", lawyer_letter)
+# 主程序逻辑
+if __name__ == "__main__":
+    # 使用文件路径加载 Excel 参考数据，限制为5个案件
+    file_path = '/home/chen/rag-copy/起訴狀案例測試.xlsx'
+    reference_cases = load_reference_cases(file_path, max_cases=5, max_chars_per_case=200)
+    
+    # 手动输入新案件的資料
+    print("請手動輸入新案件的資料：")
+    case_data = manual_input_case_data()
+    
+    # 生成律师函
+    lawyer_letter = generate_lawyer_letter(reference_cases, case_data)
+    
+    # 打印生成的律师函
+    print("\n生成的律师函：\n", lawyer_letter)
